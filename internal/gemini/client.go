@@ -14,10 +14,24 @@ import (
 )
 
 const (
-	EndpointGoogle   = "https://www.google.com"
-	EndpointInit     = "https://gemini.google.com/app"
-	EndpointGenerate = "https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate"
+	EndpointGoogle          = "https://www.google.com"
+	DefaultBaseURL          = "https://gemini.google.com"
+	endpointInitPath        = "/app"
+	endpointGeneratePath    = "/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate"
 )
+
+// GetBaseURL returns the configured Gemini base URL from the GEMINI_BASE_URL
+// environment variable, falling back to the default gemini.google.com endpoint.
+// The value must start with http:// or https://.
+func GetBaseURL() string {
+	if base := strings.TrimRight(strings.TrimSpace(os.Getenv("GEMINI_BASE_URL")), "/"); base != "" {
+		if strings.HasPrefix(base, "http://") || strings.HasPrefix(base, "https://") {
+			return base
+		}
+		log.Printf("Warning: GEMINI_BASE_URL '%s' is not a valid URL (must start with http:// or https://), using default", base)
+	}
+	return DefaultBaseURL
+}
 
 // ModelHeaders maps model names to their specific required headers.
 // You can add new models here by inspecting the 'x-goog-ext-525001261-jspb' header in browser DevTools.
@@ -50,7 +64,7 @@ func NewClient(cookies map[string]string, proxyURL string) (*Client, error) {
 		return nil, err
 	}
 
-	u, _ := url.Parse("https://gemini.google.com")
+	u, _ := url.Parse(GetBaseURL())
 	var cookieList []*http.Cookie
 	for k, v := range cookies {
 		cookieList = append(cookieList, &http.Cookie{
@@ -71,7 +85,7 @@ func NewClient(cookies map[string]string, proxyURL string) (*Client, error) {
 }
 
 func (c *Client) Init() error {
-	req, _ := http.NewRequest(http.MethodGet, EndpointInit, nil)
+	req, _ := http.NewRequest(http.MethodGet, GetBaseURL()+endpointInitPath, nil)
 	req.Header.Set("User-Agent", GetCurrentUserAgent())
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
 	req.Header.Set("Accept-Language", getLangHeader())
@@ -190,7 +204,8 @@ func (c *Client) doGenerateContentRequest(prompt string, model string, files []F
 	form.Set("at", c.SNlM0e)
 	data := form.Encode()
 
-	req, _ := http.NewRequest(http.MethodPost, EndpointGenerate, strings.NewReader(data))
+	baseURL := GetBaseURL()
+	req, _ := http.NewRequest(http.MethodPost, baseURL+endpointGeneratePath, strings.NewReader(data))
 
 	q := req.URL.Query()
 	q.Add("bl", c.VersionBL)
@@ -203,8 +218,8 @@ func (c *Client) doGenerateContentRequest(prompt string, model string, files []F
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded;charset=utf-8")
 	req.Header.Set("User-Agent", GetCurrentUserAgent())
-	req.Header.Set("Origin", "https://gemini.google.com")
-	req.Header.Set("Referer", "https://gemini.google.com/")
+	req.Header.Set("Origin", baseURL)
+	req.Header.Set("Referer", baseURL+"/")
 	req.Header.Set("X-Same-Domain", "1")
 	req.Header.Set("Accept-Language", getLangHeader())
 	req.Header.Set("Sec-Fetch-Dest", "empty")

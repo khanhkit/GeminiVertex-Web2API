@@ -39,7 +39,7 @@ func (c *Client) UploadFile(data []byte, filename string) (string, error) {
 	req.Header.Set("Push-ID", UploadPushID)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("User-Agent", GetCurrentUserAgent())
-	req.Header.Set("Origin", "https://gemini.google.com")
+	req.Header.Set("Origin", GetBaseURL())
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
