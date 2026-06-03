@@ -19,27 +19,87 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// BrowserType identifies which Chromium-based browser to use.
+type BrowserType string
+
+const (
+	BrowserChrome BrowserType = "Chrome"
+	BrowserEdge   BrowserType = "Edge"
+)
+
+// ChromeProfile holds profile metadata for a Chromium-based browser.
 type ChromeProfile struct {
 	Name        string
 	DisplayName string
 	Path        string
 }
 
-func getChomeUserDataDir() string {
-	if runtime.GOOS == "windows" {
-		return filepath.Join(os.Getenv("LOCALAPPDATA"), "Google", "Chrome", "User Data")
-	} else if runtime.GOOS == "darwin" {
-		return filepath.Join(os.Getenv("HOME"), "Library", "Application Support", "Google", "Chrome")
+// getUserDataDir returns the User Data directory for the given browser.
+func getUserDataDir(bt BrowserType) string {
+	switch bt {
+	case BrowserEdge:
+		if runtime.GOOS == "windows" {
+			return filepath.Join(os.Getenv("LOCALAPPDATA"), "Microsoft", "Edge", "User Data")
+		} else if runtime.GOOS == "darwin" {
+			return filepath.Join(os.Getenv("HOME"), "Library", "Application Support", "Microsoft Edge")
+		}
+		return filepath.Join(os.Getenv("HOME"), ".config", "microsoft-edge")
+	default: // BrowserChrome
+		if runtime.GOOS == "windows" {
+			return filepath.Join(os.Getenv("LOCALAPPDATA"), "Google", "Chrome", "User Data")
+		} else if runtime.GOOS == "darwin" {
+			return filepath.Join(os.Getenv("HOME"), "Library", "Application Support", "Google", "Chrome")
+		}
+		return filepath.Join(os.Getenv("HOME"), ".config", "google-chrome")
 	}
-	return filepath.Join(os.Getenv("HOME"), ".config", "google-chrome")
 }
 
-func ListChromeProfiles() ([]ChromeProfile, error) {
-	userDataDir := getChomeUserDataDir()
+// findBrowserPath returns the path to the browser executable.
+func findBrowserPath(bt BrowserType) string {
+	switch bt {
+	case BrowserEdge:
+		if runtime.GOOS == "windows" {
+			paths := []string{
+				filepath.Join(os.Getenv("PROGRAMFILES"), "Microsoft", "Edge", "Application", "msedge.exe"),
+				filepath.Join(os.Getenv("PROGRAMFILES(X86)"), "Microsoft", "Edge", "Application", "msedge.exe"),
+				filepath.Join(os.Getenv("LOCALAPPDATA"), "Microsoft", "Edge", "Application", "msedge.exe"),
+			}
+			for _, p := range paths {
+				if _, err := os.Stat(p); err == nil {
+					return p
+				}
+			}
+		} else if runtime.GOOS == "darwin" {
+			p := "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
+		return "microsoft-edge"
+	default: // BrowserChrome
+		if runtime.GOOS == "windows" {
+			paths := []string{
+				filepath.Join(os.Getenv("PROGRAMFILES"), "Google", "Chrome", "Application", "chrome.exe"),
+				filepath.Join(os.Getenv("PROGRAMFILES(X86)"), "Google", "Chrome", "Application", "chrome.exe"),
+				filepath.Join(os.Getenv("LOCALAPPDATA"), "Google", "Chrome", "Application", "chrome.exe"),
+			}
+			for _, p := range paths {
+				if _, err := os.Stat(p); err == nil {
+					return p
+				}
+			}
+		}
+		return "chrome"
+	}
+}
+
+// ListBrowserProfiles lists available profiles for the given browser.
+func ListBrowserProfiles(bt BrowserType) ([]ChromeProfile, error) {
+	userDataDir := getUserDataDir(bt)
 
 	entries, err := os.ReadDir(userDataDir)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read Chrome user data dir: %v", err)
+		return nil, fmt.Errorf("cannot read %s user data dir: %v", bt, err)
 	}
 
 	profileNames := make(map[string]string)
@@ -94,29 +154,29 @@ func ListChromeProfiles() ([]ChromeProfile, error) {
 	return profiles, nil
 }
 
-func findChromePath() string {
-	if runtime.GOOS == "windows" {
-		paths := []string{
-			filepath.Join(os.Getenv("PROGRAMFILES"), "Google", "Chrome", "Application", "chrome.exe"),
-			filepath.Join(os.Getenv("PROGRAMFILES(X86)"), "Google", "Chrome", "Application", "chrome.exe"),
-			filepath.Join(os.Getenv("LOCALAPPDATA"), "Google", "Chrome", "Application", "chrome.exe"),
-		}
-		for _, p := range paths {
-			if _, err := os.Stat(p); err == nil {
-				return p
-			}
-		}
-	}
-	return "chrome"
+// ListChromeProfiles lists Chrome profiles (kept for backward compatibility).
+func ListChromeProfiles() ([]ChromeProfile, error) {
+	return ListBrowserProfiles(BrowserChrome)
 }
 
-func FetchCookiesFromProfile(profile ChromeProfile) (map[string]string, error) {
-	chromePath := findChromePath()
+// getChomeUserDataDir returns the Chrome user data directory (kept for backward compatibility).
+func getChomeUserDataDir() string {
+	return getUserDataDir(BrowserChrome)
+}
+
+// findChromePath returns the Chrome executable path (kept for backward compatibility).
+func findChromePath() string {
+	return findBrowserPath(BrowserChrome)
+}
+
+// FetchCookiesFromProfileWithBrowser fetches Google cookies from the given profile using the specified browser.
+func FetchCookiesFromProfileWithBrowser(profile ChromeProfile, bt BrowserType) (map[string]string, error) {
+	browserPath := findBrowserPath(bt)
 	port := 20000 + time.Now().Nanosecond()%10000
 
-	userDataDir := getChomeUserDataDir()
+	userDataDir := getUserDataDir(bt)
 
-	cmd := exec.Command(chromePath,
+	cmd := exec.Command(browserPath,
 		fmt.Sprintf("--remote-debugging-port=%d", port),
 		fmt.Sprintf("--user-data-dir=%s", userDataDir),
 		fmt.Sprintf("--profile-directory=%s", profile.Name),
@@ -128,7 +188,7 @@ func FetchCookiesFromProfile(profile ChromeProfile) (map[string]string, error) {
 	)
 
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start Chrome: %v", err)
+		return nil, fmt.Errorf("failed to start %s: %v", bt, err)
 	}
 	defer func() {
 		cmd.Process.Kill()
@@ -145,7 +205,7 @@ func FetchCookiesFromProfile(profile ChromeProfile) (map[string]string, error) {
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Chrome DevTools: %v", err)
+		return nil, fmt.Errorf("failed to connect to %s DevTools: %v", bt, err)
 	}
 	defer resp.Body.Close()
 
@@ -228,23 +288,47 @@ func FetchCookiesFromProfile(profile ChromeProfile) (map[string]string, error) {
 	}
 }
 
-func RunFetchCookies() error {
-	fmt.Println("=== Chrome Cookie Fetcher ===")
-	fmt.Println("\n[!] Please close Chrome browser before proceeding!")
-	fmt.Println("    (Press Enter to continue after closing Chrome...)")
-	bufio.NewReader(os.Stdin).ReadString('\n')
+// FetchCookiesFromProfile fetches cookies using Chrome (kept for backward compatibility).
+func FetchCookiesFromProfile(profile ChromeProfile) (map[string]string, error) {
+	return FetchCookiesFromProfileWithBrowser(profile, BrowserChrome)
+}
 
-	fmt.Println("Scanning Chrome profiles...")
-	profiles, err := ListChromeProfiles()
+// chooseBrowser prompts the user to select Chrome or Edge and returns the chosen BrowserType.
+func chooseBrowser(reader *bufio.Reader) BrowserType {
+	fmt.Println("Select browser:")
+	fmt.Println("  [1] Chrome")
+	fmt.Println("  [2] Edge")
+	fmt.Print("Enter choice (default: 1): ")
+
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+	if input == "2" {
+		return BrowserEdge
+	}
+	return BrowserChrome
+}
+
+func RunFetchCookies() error {
+	reader := bufio.NewReader(os.Stdin)
+
+	bt := chooseBrowser(reader)
+
+	fmt.Printf("\n=== %s Cookie Fetcher ===\n", bt)
+	fmt.Printf("\n[!] Please close %s browser before proceeding!\n", bt)
+	fmt.Println("    (Press Enter to continue...)")
+	reader.ReadString('\n')
+
+	fmt.Printf("Scanning %s profiles...\n", bt)
+	profiles, err := ListBrowserProfiles(bt)
 	if err != nil {
 		return err
 	}
 
 	if len(profiles) == 0 {
-		return fmt.Errorf("no Chrome profiles found")
+		return fmt.Errorf("no %s profiles found", bt)
 	}
 
-	fmt.Println("\nAvailable Chrome profiles:")
+	fmt.Printf("\nAvailable %s profiles:\n", bt)
 	for i, p := range profiles {
 		if p.Name == "Default" {
 			fmt.Printf("  [%d] %s (default account)\n", i+1, p.DisplayName)
@@ -254,7 +338,6 @@ func RunFetchCookies() error {
 	}
 
 	fmt.Println("\nEnter profile numbers (e.g., 1,2,3) or ALL:")
-	reader := bufio.NewReader(os.Stdin)
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(input)
 
@@ -279,7 +362,7 @@ func RunFetchCookies() error {
 	}
 
 	fmt.Printf("\nFetching cookies from %d profile(s)...\n", len(selectedProfiles))
-	fmt.Println("Note: Chrome will start in headless mode for each profile.")
+	fmt.Printf("Note: %s will start in headless mode for each profile.\n", bt)
 
 	type result struct {
 		index   int
@@ -294,7 +377,7 @@ func RunFetchCookies() error {
 			var cookies map[string]string
 			var err error
 			for retry := 0; retry < 3; retry++ {
-				cookies, err = FetchCookiesFromProfile(p)
+				cookies, err = FetchCookiesFromProfileWithBrowser(p, bt)
 				if err == nil {
 					break
 				}
