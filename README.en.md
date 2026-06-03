@@ -53,7 +53,7 @@ The application automatically reads Google cookies from Firefox (default account
 # 3. Select profile (Enter 1, 2, 3 or ALL)
 ```
 See [internal/browser/README.en.md](internal/browser/README.en.md) for details.
-Note: This method might not work for newer versions of Chrome, which applies to most Chrome users.
+Note: This automated cookie extraction method may not be compatible with recent Chrome updates, which affects many users. If you encounter issues, please use Method 3 (Manual Configuration) instead.
 
 **Method 3: Manual Configuration**
 ```bash
@@ -97,7 +97,7 @@ POST /v1beta/models/{model}:generateContent
 POST /v1beta/models/{model}:streamGenerateContent
 GET  /v1beta/models
 ```
-Authentication is supported via three methods: `Authorization: ****** `?key=YOUR_API_KEY`, and `x-goog-api-key`.
+Authentication is supported via three methods: `Authorization: Bearer_token`, query parameter `?key=YOUR_API_KEY`, and header `x-goog-api-key: YOUR_API_KEY`.
 
 ## Usage Examples
 
