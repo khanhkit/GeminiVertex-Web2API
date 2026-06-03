@@ -22,9 +22,13 @@ const (
 
 // GetBaseURL returns the configured Gemini base URL from the GEMINI_BASE_URL
 // environment variable, falling back to the default gemini.google.com endpoint.
+// The value must start with http:// or https://.
 func GetBaseURL() string {
 	if base := strings.TrimRight(strings.TrimSpace(os.Getenv("GEMINI_BASE_URL")), "/"); base != "" {
-		return base
+		if strings.HasPrefix(base, "http://") || strings.HasPrefix(base, "https://") {
+			return base
+		}
+		log.Printf("Warning: GEMINI_BASE_URL '%s' is not a valid URL (must start with http:// or https://), using default", base)
 	}
 	return DefaultBaseURL
 }
